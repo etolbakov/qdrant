@@ -116,7 +116,8 @@ fn main() -> anyhow::Result<()> {
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    let log_level_reload_handle = tracing::setup(&settings.log_level)?;
+    let (log_level_reload_handle, _on_disk_appender_flush_guard) =
+        tracing::setup(&settings.log_level)?;
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 

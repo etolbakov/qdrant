@@ -1,6 +1,14 @@
 debug: false
 log_level: INFO
 
+# TODO: Draft of a possible configuration format
+on_disk_logger:
+  log_level: DEBUG,h2=INFO
+  file: ./logs/qdrant.log
+  max_file_size_mb: 32
+  max_files: 3
+  ignore_init_error: true
+
 storage:
   # Where to store all the data
   storage_path: ./storage

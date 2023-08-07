@@ -94,7 +94,7 @@ async fn get_locks(toc: web::Data<TableOfContent>) -> impl Responder {
 #[get("/log_level")]
 async fn get_log_level(handle: web::Data<LogLevelReloadHandle>) -> impl Responder {
     handle
-        .get()
+        .get() // TODO: This is not implemented (yet) and panics (for now)!
         .map_or_else(plain_text_error, plain_text_response)
 }
 

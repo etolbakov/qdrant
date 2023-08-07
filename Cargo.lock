@@ -3618,7 +3618,9 @@ dependencies = [
  "tower",
  "tower-layer",
  "tracing",
+ "tracing-appender",
  "tracing-log",
+ "tracing-rolling-file",
  "tracing-subscriber",
  "tracing-tracy",
  "uuid",
@@ -5076,6 +5078,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-appender"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09d48f71a791638519505cefafe162606f706c25592e4bde4d97600c0195312e"
+dependencies = [
+ "crossbeam-channel",
+ "parking_lot",
+ "time 0.3.17",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tracing-attributes"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5105,6 +5119,15 @@ dependencies = [
  "lazy_static",
  "log",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-rolling-file"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cdff1b3d0c5e93cb57921f06a3c2484b68237e4b99a8e569190b68f28887f1f"
+dependencies = [
+ "chrono",
 ]
 
 [[package]]
