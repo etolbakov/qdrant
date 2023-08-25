@@ -1,8 +1,10 @@
+#![allow(dead_code, unused_imports)]
+
 use std::fmt::Write as _;
 use std::str::FromStr as _;
 
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{filter, fmt};
+use tracing_subscriber::{filter, fmt, reload, EnvFilter, Registry};
 
 const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 
@@ -15,7 +17,7 @@ const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
     ("raft", log::LevelFilter::Warn),
 ];
 
-pub fn setup(user_filters: &str) -> anyhow::Result<()> {
+pub fn setup(user_filters: &str) -> anyhow::Result<LogLevelReloadHandle> {
     tracing_log::LogTracer::init()?;
 
     let mut filters = DEFAULT_LOG_LEVEL.to_string();
@@ -32,15 +34,17 @@ pub fn setup(user_filters: &str) -> anyhow::Result<()> {
 
     write!(&mut filters, ",{user_filters}").unwrap(); // Writing into `String` never fails
 
+    let (filter, handle) = reload::Layer::new(
+        filter::EnvFilter::builder()
+            .with_regex(false)
+            .parse_lossy(filters),
+    );
+
     let reg = tracing_subscriber::registry().with(
         fmt::layer()
             .with_ansi(true)
             .with_span_events(fmt::format::FmtSpan::NEW)
-            .with_filter(
-                filter::EnvFilter::builder()
-                    .with_regex(false)
-                    .parse_lossy(filters),
-            ),
+            .with_filter(filter),
     );
 
     // Use `console` or `console-subscriber` feature to enable `console-subscriber`
@@ -68,5 +72,27 @@ pub fn setup(user_filters: &str) -> anyhow::Result<()> {
 
     tracing::subscriber::set_global_default(reg)?;
 
-    Ok(())
+    Ok(handle.into())
+}
+
+#[derive(Clone, Debug)]
+pub struct LogLevelReloadHandle(reload::Handle<filter::EnvFilter, Registry>);
+
+impl LogLevelReloadHandle {
+    pub fn get(&self) -> anyhow::Result<String> {
+        let filter = self.0.with_current(|filter| filter.to_string())?;
+        Ok(filter)
+    }
+
+    pub fn set(&self, filter: &str) -> anyhow::Result<()> {
+        let filter = filter::EnvFilter::builder().parse_lossy(filter);
+        self.0.reload(filter)?;
+        Ok(())
+    }
+}
+
+impl From<reload::Handle<filter::EnvFilter, Registry>> for LogLevelReloadHandle {
+    fn from(handle: reload::Handle<filter::EnvFilter, Registry>) -> Self {
+        Self(handle)
+    }
 }
