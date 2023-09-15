@@ -9,14 +9,15 @@ use std::time::SystemTimeError;
 use api::grpc::transport_channel_pool::RequestError;
 use common::validation::validate_range_generic;
 use futures::io;
+use itertools::Itertools;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
-    DEFAULT_VECTOR_NAME,
+    Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct,
+    VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -264,13 +265,14 @@ pub struct Batch<T> {
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
+    RecommendBestScore(NamedRecoQuery),
 }
 
 impl QueryEnum {
     pub fn get_vector_name(&self) -> &str {
         match self {
             QueryEnum::Nearest(vector) => vector.get_name(),
-            // QueryEnum::PositiveNegative { using: UsingVector::Name(name), .. } => name
+            QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
         }
     }
 }
@@ -355,6 +357,13 @@ pub struct PointRequest {
     pub with_vector: WithVector,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
+pub enum RecommendStrategy {
+    #[default]
+    AverageVector,
+    TakeBestScore,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
@@ -391,37 +400,52 @@ pub struct LookupLocation {
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those
+    #[serde(default)]
     pub positive: Vec<PointIdType>,
+
     /// Try to avoid vectors like this
     #[serde(default)]
     pub negative: Vec<PointIdType>,
+
+    /// How to use positive and negative vectors to find the results
+    #[serde(default)]
+    pub strategy: RecommendStrategy,
+
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
+
     /// Additional search params
     #[validate]
     pub params: Option<SearchParams>,
+
     /// Max number of result to return
     #[serde(alias = "top")]
     #[validate(range(min = 1))]
     pub limit: usize,
+
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
     #[serde(default)]
     pub offset: usize,
+
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
+
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
+
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
+
     /// Define which vector to use for recommendation, if not specified - try to use default vector
     #[serde(default)]
     pub using: Option<UsingVector>,
+
     /// The location used to lookup vectors. If not specified - use current collection.
     /// Note: the other collection should have the same vector size as the current collection
     #[serde(default)]
@@ -438,11 +462,16 @@ pub struct RecommendRequestBatch {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct RecommendGroupsRequest {
     /// Look for vectors closest to those
+    #[serde(default)]
     pub positive: Vec<PointIdType>,
 
     /// Try to avoid vectors like this
     #[serde(default)]
     pub negative: Vec<PointIdType>,
+
+    /// How to use positive and negative vectors to find the results
+    #[serde(default)]
+    pub strategy: RecommendStrategy,
 
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
@@ -1162,11 +1191,7 @@ pub struct BaseGroupRequest {
 impl From<SearchRequestBatch> for CoreSearchRequestBatch {
     fn from(batch: SearchRequestBatch) -> Self {
         CoreSearchRequestBatch {
-            searches: batch
-                .searches
-                .into_iter()
-                .map(CoreSearchRequest::from)
-                .collect(),
+            searches: batch.searches.into_iter().map_into().collect(),
         }
     }
 }
@@ -1189,7 +1214,8 @@ impl From<SearchRequest> for CoreSearchRequest {
 impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
-            QueryEnum::Nearest(named_vector) => QueryVector::Nearest(named_vector.to_vector()),
+            QueryEnum::Nearest(named) => QueryVector::Nearest(named.to_vector()),
+            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
         }
     }
 }
