@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+mod immutable_numeric_index;
 mod mutable_numeric_index;
 
 use std::cmp::{max, min};
@@ -14,9 +15,10 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use self::immutable_numeric_index::ImmutableNumericIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
@@ -59,34 +61,43 @@ impl Encodable for FloatPayloadType {
 
 pub enum NumericIndex<T: Encodable + Numericable> {
     Mutable(MutableNumericIndex<T>),
+    Immutable(ImmutableNumericIndex<T>),
 }
 
 impl<T: Encodable + Numericable> NumericIndex<T> {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        NumericIndex::Mutable(MutableNumericIndex::new(db, field))
+    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+        if is_appendable {
+            NumericIndex::Mutable(MutableNumericIndex::new(db, field))
+        } else {
+            NumericIndex::Immutable(ImmutableNumericIndex::new(db, field))
+        }
     }
 
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
         match self {
             NumericIndex::Mutable(index) => index.get_db_wrapper(),
+            NumericIndex::Immutable(index) => index.get_db_wrapper(),
         }
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
             NumericIndex::Mutable(index) => &index.histogram,
+            NumericIndex::Immutable(index) => &index.histogram,
         }
     }
 
     fn get_points_count(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.points_count,
+            NumericIndex::Immutable(index) => index.points_count,
         }
     }
 
     fn get_values_count(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.get_values_count(),
+            NumericIndex::Immutable(index) => index.get_values_count(),
         }
     }
 
@@ -101,6 +112,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             NumericIndex::Mutable(index) => index.load(),
+            NumericIndex::Immutable(index) => index.load(),
         }
     }
 
@@ -111,18 +123,21 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.remove_point(idx),
+            NumericIndex::Immutable(index) => index.remove_point(idx),
         }
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<T>> {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
         match self {
             NumericIndex::Mutable(index) => index.get_values(idx),
+            NumericIndex::Immutable(index) => index.get_values(idx),
         }
     }
 
     pub fn get_max_values_per_point(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.max_values_per_point,
+            NumericIndex::Immutable(index) => index.max_values_per_point,
         }
     }
 
@@ -327,6 +342,7 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
 
         Some(match self {
             NumericIndex::Mutable(index) => Box::new(index.values_range(start_bound, end_bound)),
+            NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
         })
     }
 
@@ -419,6 +435,9 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
         }
     }
 
@@ -442,6 +461,9 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
         }
     }
 
