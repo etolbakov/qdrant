@@ -6290,7 +6290,7 @@
             "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
           },
           "negative": {
@@ -6298,7 +6298,7 @@
             "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
           },
           "strategy": {
@@ -6393,6 +6393,20 @@
             ]
           }
         }
+      },
+      "RecommendExample": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        ]
       },
       "RecommendStrategy": {
         "type": "string",
@@ -9097,7 +9111,7 @@
             "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
           },
           "negative": {
@@ -9105,7 +9119,7 @@
             "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
           },
           "strategy": {
