@@ -3,6 +3,7 @@ mod tests;
 
 mod immutable_numeric_index;
 mod mutable_numeric_index;
+mod numeric_index_key;
 
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
@@ -16,6 +17,7 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use self::immutable_numeric_index::ImmutableNumericIndex;
+use self::numeric_index_key::NumericIndexKey;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -305,11 +307,17 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
                 let v: T = T::from_f64(*gt);
-                Excluded(v.encode_key(PointOffsetType::MAX))
+                Excluded(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MAX,
+                })
             }
             Range { gte: Some(gte), .. } => {
                 let v: T = T::from_f64(*gte);
-                Included(v.encode_key(PointOffsetType::MIN))
+                Included(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MIN,
+                })
             }
             _ => Unbounded,
         };
@@ -317,11 +325,17 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
                 let v: T = T::from_f64(*lt);
-                Excluded(v.encode_key(PointOffsetType::MIN))
+                Excluded(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MIN,
+                })
             }
             Range { lte: Some(lte), .. } => {
                 let v: T = T::from_f64(*lte);
-                Included(v.encode_key(PointOffsetType::MAX))
+                Included(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MAX,
+                })
             }
             _ => Unbounded,
         };
@@ -341,7 +355,19 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         }
 
         Some(match self {
-            NumericIndex::Mutable(index) => Box::new(index.values_range(start_bound, end_bound)),
+            NumericIndex::Mutable(index) => {
+                let start_bound = match start_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                let end_bound = match end_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                Box::new(index.values_range(start_bound, end_bound))
+            }
             NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
         })
     }
